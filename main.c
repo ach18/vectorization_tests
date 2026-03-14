@@ -144,6 +144,7 @@ int main(int argc, char* argv[])
     if(data_type == 'f')
     {
         free(fa);
+        free(fa_copy);
         free(fb);
         free(fc);
     } 
@@ -151,6 +152,7 @@ int main(int argc, char* argv[])
     if(data_type == 'd')
     {
         free(da);
+        free(da_copy);
         free(db);
         free(dc);
     }
