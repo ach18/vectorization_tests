@@ -1,6 +1,10 @@
+#define  _CRT_SECURE_NO_WARNINGS
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
+#include "mkl.h"
 #include <immintrin.h>
 #include <omp.h>
 
@@ -11,23 +15,29 @@ char data_type; //d - double; f - float
 char vect_type[4]; // supported vector instructions: MMX, SSE, AVX, FMA
 
 
-float *fa, *fa_copy, *fu, *fv;
-double *da, *da_copy, *du, *dv;
+float *fa, *fa_copy, *fu, *fv, *fs;
+double *da, *da_copy, *du, *dv, *ds;
 
 void finit_rand_matr(float* matr, int m, int n); //+
 void finit_ident_matr(float* matr, int m, int n); //+
 void fcopy_matr(float* dest_matr, float* src_matr, int m, int n); //+
 void dinit_rand_matr(double* matr, int m, int n); //+
 void dinit_ident_matr(double* matr, int m, int n);//+
-void dcopy_matr(double* dest_matr, double* src_matr, int m, int n);
+void dcopy_matr(double* dest_matr, double* src_matr, int m, int n);//+
+void dtransp_matr(double* dest_matr, double* src_matr, int m, int n); 
 
 //Matrix comparison (without eps tol)
 int fmatr_compare(float* matr_a, float* matr_b, int m, int n);
 int dmatr_compare(double* matr_a, double* matr_b, int m, int n);
 
+//plane jacobi (without blocking)
+void dgesvj(double* amatr, double* umatr, double* vmatr, double* svect, int m, int n);
 
 //Utils
 void p_init(int argc, char* argv[], int* m, int* n, char* data_type, char vect_type[]);
+void dfrobenius(double* amatr, int m, int n, double* norm, double* off_norm);
+void dsort_vals(double* umatr, double* vmatr, double* svect, int m, int n);
+
 
 int main(int argc, char* argv[])
 {
@@ -60,6 +70,8 @@ int main(int argc, char* argv[])
         fa_copy = (float*) malloc(m * n * sizeof(float));
         fu = (float*) malloc(m * n * sizeof(float));
         fv = (float*) malloc(m * n * sizeof(float));
+        fs = (float*) malloc(n * sizeof(float));
+
         finit_rand_matr(fa, m, n);
         fcopy_matr(fa_copy, fa, m, n);
         finit_ident_matr(fu, m, n);
@@ -72,6 +84,7 @@ int main(int argc, char* argv[])
         da_copy = (double*) malloc(m * n * sizeof(double));
         du = (double*) malloc(m * n * sizeof(double));
         dv = (double*) malloc(m * n * sizeof(double));
+        ds = (double*) malloc(n * sizeof(double));
         dinit_rand_matr(da, m, n);
         dcopy_matr(da_copy, da, m, n);
         dinit_ident_matr(du, m, n);
@@ -93,6 +106,7 @@ int main(int argc, char* argv[])
         {
             t1 = omp_get_wtime();
             //dvector_summ(da, db, dc, vsize);
+            //dgesvj();
             t2 = omp_get_wtime();
 
             printf("\ngesvj\t%c\t%f\t%s", data_type, (t2 - t1), "no_vectorized");
@@ -214,4 +228,158 @@ void dcopy_matr(double* dest_matr, double* src_matr, int m, int n)
     {
         dest_matr[i] = src_matr[i];
     }
+}
+
+void dfrobenius(double* amatr, int m, int n, double* norm, double* off_norm)
+{
+    double sum = 0.0;       // sum m[i][j]^2 for 0 < i < m and 0 < j < n
+    double off_sum = 0.0;  // sum m[i][j]^2 for 0 < i < m and 0 < j < n and i == j
+
+    //double LAPACKE_dlange
+    //sum = LAPACKE_dlange(matrix_layout, 'F', m, n, data, m);
+
+    for(int i = 0; i < m; i++)
+    {
+        for(int j = 0; j < n; j++)
+        {
+            sum += amatr[(n * i) + j] * amatr[(n * i) + j];
+            if(i != j)
+                off_sum += amatr[(n * i) + j] * amatr[(n * i) + j];
+        }
+    }
+    *norm = sum;
+    *off_norm = off_sum;
+}
+
+void dsort_vals(double* umatr, double* vmatr, double* svect, int m, int n)
+{
+    for (int i = 0; i < n; i++) 
+    {
+        double s_last = svect[i];
+        int i_last = i;
+        for (int j = i + 1; j < n; j++) 
+        {
+            if (svect[j] > s_last) 
+            {
+                s_last = svect[j];
+                i_last = j;
+            }
+        }
+        if (i_last != i) 
+        {
+            double tmp;
+            tmp = svect[i];
+            svect[i] = svect[i_last];
+            svect[i_last] = tmp;
+
+            for (int k = 0; k < m; k++) 
+            {
+                tmp = umatr[(k * n) + i];
+                umatr[(k * n) + i] = umatr[(k * n) + i_last];
+                umatr[(k * n) + i_last] = tmp;
+            }
+            for (int k = 0; k < m; k++)
+            {
+                tmp = vmatr[(k * n) + i];
+                vmatr[(k * n) + i] = vmatr[(k * n) + i_last];
+                vmatr[(k * n) + i_last] = tmp;
+            }
+        }
+    }
+}
+
+//testing...
+void dgesvj(double* amatr, double* umatr, double* vmatr, double* svect, int m, int n)
+{
+    int iter = 0;
+    int max_sweeps = 40;
+    double tol = 1e-15;
+    double norm = 0.0;
+    double off_norm = 0.0;
+
+    double bii = 0.0;
+    double bij = 0.0;
+    double bji = 0.0;
+    double bjj = 0.0;
+    double tau = 0.0;
+    double t = 0.0;
+    double c = 0.0;
+    double s = 0.0;
+    double *acopy_matr = (double*) malloc(m * n * sizeof(double));
+    double *gramm_matr = (double*) malloc(m * n * sizeof(double));
+
+    dfrobenius(amatr, m, n, &norm, &off_norm);
+    while (sqrt(off_norm) > tol * sqrt(norm))
+    {
+        //B^T * B
+        cblas_dcopy(m * n, amatr, 1, acopy_matr, 1);
+        cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, n, n, m, 1.0, acopy_matr, n, amatr, n, 0.0, gramm_matr, n);
+        for (int i = 0; i < (n - 1); i++) 
+        {
+            for (int j = (i + 1); j < n; j++) 
+            {
+                bii = gramm_matr[n * i + i];
+				bij = gramm_matr[n * j + i];
+				bji = gramm_matr[n * i + j];
+				bjj = gramm_matr[n * j + j];
+
+                tau = (bjj - bii) / (2.0 * bij);
+                if(tau >= 0)
+                    t = 1.0 / (tau + sqrt(1.0 + (tau * tau)));
+                else 
+                    t = -1.0 / (-tau + sqrt(1.0 + (tau * tau)));
+
+                c = 1.0 / sqrt(1.0 + (t * t));
+                s = t * c;
+                
+                for (int k = 0; k < n; k++) {
+                    double b_ki = amatr[n * i + k];
+                    double b_kj = amatr[n * j + k];
+
+                    double left = (c * b_ki) - (s * b_kj);
+                    double right = (s * b_ki) + (c * b_kj);
+
+                    amatr[n * i + k] = left;
+                    amatr[n * j + k] = right;
+                }
+                for (int k = 0; k < n; k++) {
+                    double v_ki = vmatr[n * i + k];
+                    double v_kj = vmatr[n * j + k];
+
+                    double left = (c * v_ki) - (s * v_kj);
+                    double right = (s * v_ki) + (c * v_kj);
+
+                    vmatr[n * i + k] = left;
+                    vmatr[n * j + k] = right;
+                }
+            }
+        }
+        dfrobenius(amatr, m, n, &norm, &off_norm);
+        if (iter > max_sweeps)
+            return;
+        else
+            iter++;
+    }
+
+    for (int i = 0; i < n; i++) 
+    {
+        double sigma = 0.0;
+        for (int k = 0; k < m; k++) 
+        {
+            sigma += amatr[n * k + i] * amatr[n * k + i];
+        }
+        sigma = sqrt(sigma);
+
+        //if (i < n_singular_vals) {
+        //    s[i] = sigma;
+        //}
+        svect[i] = sigma;
+
+        //U - zeroes-like ?
+        for (int k = 0; k < m; k++) 
+        {
+            umatr[n * k + i] /= sigma;
+        }
+    }
+
 }
