@@ -269,12 +269,12 @@ void dfrobenius(double* amatr, int m, int n, double* norm, double* off_norm)
         for(int j = 0; j < n; j++)
         {
             sum += amatr[(n * i) + j] * amatr[(n * i) + j];
-            if(i != j)
+            if(i == j)
                 off_sum += amatr[(n * i) + j] * amatr[(n * i) + j];
         }
     }
     *norm = sum;
-    *off_norm = off_sum;
+    *off_norm = sum - off_sum;
 }
 
 void dsort_vals(double* umatr, double* vmatr, double* svect, int m, int n)
@@ -330,7 +330,8 @@ void dprint_matr(double* amatr, int m, int n)
 void dgesvj_nb(double* amatr, double* umatr, double* vmatr, double* svect, int m, int n)
 {
     int iter = 0;
-    int max_sweeps = 40;
+    int max_sweeps = 500;
+    int converged = 0;
     double tol = 1e-15;
     double norm = 0.0;
     double off_norm = 0.0;
@@ -346,9 +347,13 @@ void dgesvj_nb(double* amatr, double* umatr, double* vmatr, double* svect, int m
     //double *acopy_matr = (double*) malloc(m * n * sizeof(double));
     double *gramm_matr = (double*) malloc(m * n * sizeof(double));
 
+    cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, m, n, n, 1.0, amatr, m, amatr, n, 0.0, gramm_matr, n);
     dfrobenius(amatr, m, n, &norm, &off_norm);
-    while (sqrt(off_norm) > tol * sqrt(norm))
+    //while (sqrt(off_norm) > tol * sqrt(norm))
+    //while (sqrt(off_norm) > tol)
+    do
     {
+        converged = 1;
         //B^T * B
         //cblas_dcopy(m * n, amatr, 1, acopy_matr, 1);
         cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, m, n, n, 1.0, amatr, m, amatr, n, 0.0, gramm_matr, n);
@@ -356,10 +361,22 @@ void dgesvj_nb(double* amatr, double* umatr, double* vmatr, double* svect, int m
         {
             for (int j = (i + 1); j < n; j++) 
             {
+                bii = 0.0; bij = 0.0; bjj = 0.0;
                 bii = gramm_matr[n * i + i];
 				bij = gramm_matr[n * j + i];
-				bji = gramm_matr[n * i + j];
+				////bji = gramm_matr[n * i + j];
 				bjj = gramm_matr[n * j + j];
+                /*for (int k = 0; k < m; k++)
+                {
+                    bii += amatr[n * k + i] * amatr[n * k + i];
+                    bij += amatr[n * k + i] * amatr[n * k + j];
+                    bjj += amatr[n * k + j] * amatr[n * k + j];
+                }*/
+
+                if (abs(bij) < tol)
+                    continue;
+
+                converged = 0;
 
                 tau = (bjj - bii) / (2.0 * bij);
                 if(tau >= 0)
@@ -370,34 +387,41 @@ void dgesvj_nb(double* amatr, double* umatr, double* vmatr, double* svect, int m
                 c = 1.0 / sqrt(1.0 + (t * t));
                 s = t * c;
                 
-                for (int k = 0; k < n; k++) {
-                    double b_ki = amatr[n * i + k];
-                    double b_kj = amatr[n * j + k];
+                for (int k = 0; k < m; k++) 
+                {
+                    double b_ki = amatr[n * k + i];
+                    double b_kj = amatr[n * k + j];
 
                     double left = (c * b_ki) - (s * b_kj);
                     double right = (s * b_ki) + (c * b_kj);
 
-                    amatr[n * i + k] = left;
-                    amatr[n * j + k] = right;
+                    amatr[n * k + i] = left;
+                    amatr[n * k + j] = right;
                 }
-                for (int k = 0; k < n; k++) {
-                    double v_ki = vmatr[n * i + k];
-                    double v_kj = vmatr[n * j + k];
+                for (int k = 0; k < n; k++) 
+                {
+                    double v_ki = vmatr[n * k + i];
+                    double v_kj = vmatr[n * k + j];
 
                     double left = (c * v_ki) - (s * v_kj);
                     double right = (s * v_ki) + (c * v_kj);
 
-                    vmatr[n * i + k] = left;
-                    vmatr[n * j + k] = right;
+                    vmatr[n * k + i] = left;
+                    vmatr[n * k + j] = right;
                 }
             }
         }
-        dfrobenius(amatr, m, n, &norm, &off_norm);
-        if (iter > max_sweeps)
-            return;
-        else
+        //cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, m, n, n, 1.0, amatr, m, amatr, n, 0.0, gramm_matr, n);
+        //dfrobenius(amatr, m, n, &norm, &off_norm);
+        //if (iter > max_sweeps)
+        //{
+        //    printf("\nSWEEPS %d", iter);
+        //    return;
+        //}
+        //else
             iter++;
-    }
+    } while (iter < 40);
+    //while (!converged);
 
     for (int i = 0; i < n; i++) 
     {
@@ -416,8 +440,10 @@ void dgesvj_nb(double* amatr, double* umatr, double* vmatr, double* svect, int m
         //U - zeroes-like ?
         for (int k = 0; k < m; k++) 
         {
-            umatr[n * k + i] /= sigma;
+            amatr[n * k + i] /= sigma;
         }
     }
-
+    printf("\nEND");
+    dsort_vals(amatr, vmatr, svect, m, n);
+    //free(gramm_matr);
 }
