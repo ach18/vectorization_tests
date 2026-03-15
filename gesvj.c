@@ -363,9 +363,9 @@ void dgesvj_nb(double* amatr, double* umatr, double* vmatr, double* svect, int m
             {
                 bii = 0.0; bij = 0.0; bjj = 0.0;
                 bii = gramm_matr[n * i + i];
-				bij = gramm_matr[n * j + i];
-				////bji = gramm_matr[n * i + j];
-				bjj = gramm_matr[n * j + j];
+                bij = gramm_matr[n * j + i];
+                ////bji = gramm_matr[n * i + j];
+                bjj = gramm_matr[n * j + j];
                 /*for (int k = 0; k < m; k++)
                 {
                     bii += amatr[n * k + i] * amatr[n * k + i];
@@ -378,15 +378,25 @@ void dgesvj_nb(double* amatr, double* umatr, double* vmatr, double* svect, int m
 
                 converged = 0;
 
-                tau = (bjj - bii) / (2.0 * bij);
-                if(tau >= 0)
-                    t = 1.0 / (tau + sqrt(1.0 + (tau * tau)));
-                else 
-                    t = -1.0 / (-tau + sqrt(1.0 + (tau * tau)));
+                if (bij != 0.0)
+                {
+                    tau = (bjj - bii) / (2.0 * bij);
+                    double sign = tau > 0.0 ? 1.0 : -1.0;
+                    t = sign / (abs(tau) + sqrt(1.0 + (tau * tau)));
+                    //if(tau >= 0)
+                    //    t = 1.0 / (tau + sqrt(1.0 + (tau * tau)));
+                    //else 
+                    //    t = -1.0 / (-tau + sqrt(1.0 + (tau * tau)));
 
-                c = 1.0 / sqrt(1.0 + (t * t));
-                s = t * c;
-                
+                    c = 1.0 / sqrt(1.0 + (t * t));
+                    s = t * c;
+                }
+                else
+                {
+                    c = 1.0;
+                    s = 0.0;
+                }
+
                 for (int k = 0; k < m; k++) 
                 {
                     double b_ki = amatr[n * k + i];
@@ -420,7 +430,7 @@ void dgesvj_nb(double* amatr, double* umatr, double* vmatr, double* svect, int m
         //}
         //else
             iter++;
-    } while (iter < 40);
+    } while (iter < 100);
     //while (!converged);
 
     for (int i = 0; i < n; i++) 
