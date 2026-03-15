@@ -105,7 +105,6 @@ int main(int argc, char* argv[])
         if(data_type == 'd')
         {
             t1 = omp_get_wtime();
-            //dvector_summ(da, db, dc, vsize);
             dgesvj_nb(da_copy, du, dv, ds, m, n);
             t2 = omp_get_wtime();
 
@@ -344,15 +343,15 @@ void dgesvj_nb(double* amatr, double* umatr, double* vmatr, double* svect, int m
     double t = 0.0;
     double c = 0.0;
     double s = 0.0;
-    double *acopy_matr = (double*) malloc(m * n * sizeof(double));
+    //double *acopy_matr = (double*) malloc(m * n * sizeof(double));
     double *gramm_matr = (double*) malloc(m * n * sizeof(double));
 
     dfrobenius(amatr, m, n, &norm, &off_norm);
     while (sqrt(off_norm) > tol * sqrt(norm))
     {
         //B^T * B
-        cblas_dcopy(m * n, amatr, 1, acopy_matr, 1);
-        cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, n, n, m, 1.0, acopy_matr, n, amatr, n, 0.0, gramm_matr, n);
+        //cblas_dcopy(m * n, amatr, 1, acopy_matr, 1);
+        cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, m, n, n, 1.0, amatr, m, amatr, n, 0.0, gramm_matr, n);
         for (int i = 0; i < (n - 1); i++) 
         {
             for (int j = (i + 1); j < n; j++) 
