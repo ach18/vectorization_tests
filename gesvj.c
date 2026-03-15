@@ -1,5 +1,3 @@
-#define  _CRT_SECURE_NO_WARNINGS
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,6 +15,7 @@ char vect_type[4]; // supported vector instructions: MMX, SSE, AVX, FMA
 
 float *fa, *fa_copy, *fu, *fv, *fs;
 double *da, *da_copy, *du, *dv, *ds;
+double* dwork; //for MKL dgesvj
 
 void finit_rand_matr(float* matr, int m, int n); //+
 void finit_ident_matr(float* matr, int m, int n); //+
@@ -31,12 +30,13 @@ int fmatr_compare(float* matr_a, float* matr_b, int m, int n);
 int dmatr_compare(double* matr_a, double* matr_b, int m, int n);
 
 //plane jacobi (without blocking)
-void dgesvj(double* amatr, double* umatr, double* vmatr, double* svect, int m, int n);
+void dgesvj_nb(double* amatr, double* umatr, double* vmatr, double* svect, int m, int n);
 
 //Utils
 void p_init(int argc, char* argv[], int* m, int* n, char* data_type, char vect_type[]);
 void dfrobenius(double* amatr, int m, int n, double* norm, double* off_norm);
 void dsort_vals(double* umatr, double* vmatr, double* svect, int m, int n);
+void dprint_matr(double* amatr, int m, int n);
 
 
 int main(int argc, char* argv[])
@@ -106,11 +106,38 @@ int main(int argc, char* argv[])
         {
             t1 = omp_get_wtime();
             //dvector_summ(da, db, dc, vsize);
-            //dgesvj();
+            dgesvj_nb(da_copy, du, dv, ds, m, n);
             t2 = omp_get_wtime();
 
             printf("\ngesvj\t%c\t%f\t%s", data_type, (t2 - t1), "no_vectorized");
+            printf("\n");
+            dprint_matr(ds, n, 1);
 
+            //gesvj MKL
+            dcopy_matr(da_copy, da, m, n);
+            dinit_ident_matr(du, m, n);
+            dinit_ident_matr(dv, m, n);
+
+            char joba = 'G';
+            char jobu = 'U';
+            char jobv = 'V';
+
+            MKL_INT lda = m;
+            MKL_INT ldv = n;
+            MKL_INT mv = 0;
+            MKL_INT lwork = m + n;
+            MKL_INT dgesvj_info = -1;
+            dwork = (double*)malloc(lwork * sizeof(double));
+
+
+            t1 = omp_get_wtime();
+            dgesvj(&joba, &jobu, &jobv, &m, &n, da_copy, &lda, ds, &mv, dv, &ldv, dwork, &lwork, &dgesvj_info);
+            t2 = omp_get_wtime();
+
+            printf("\ngesvj\t%c\t%f\t%s", data_type, (t2 - t1), "MKL");
+            printf("\n");
+            dprint_matr(ds, n, 1);
+            free(dwork);
         }
     }
 
@@ -145,7 +172,7 @@ void p_init(int argc, char* argv[], int* m, int* n, char* data_type, char vect_t
         if(strcmp(argv[i], "-t") == 0)
             *data_type = *(argv[i + 1]);
         if(strcmp(argv[i], "-v") == 0)
-            strcpy(vect_type, argv[i + 1]);
+            strcpy_s(vect_type, 4, argv[i + 1]);
     }
 }
 
@@ -288,8 +315,20 @@ void dsort_vals(double* umatr, double* vmatr, double* svect, int m, int n)
     }
 }
 
+void dprint_matr(double* amatr, int m, int n)
+{
+    for (int i = 0; i < m; i++)
+    {
+        for (int j = 0; j < n; j++)
+        {
+            printf("%f\t", amatr[(j*n) + i]);
+        }
+        printf("\n");
+    }
+}
+
 //testing...
-void dgesvj(double* amatr, double* umatr, double* vmatr, double* svect, int m, int n)
+void dgesvj_nb(double* amatr, double* umatr, double* vmatr, double* svect, int m, int n)
 {
     int iter = 0;
     int max_sweeps = 40;
