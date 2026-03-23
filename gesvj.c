@@ -69,13 +69,13 @@ int main(int argc, char* argv[])
         fa = (float*) malloc(m * n * sizeof(float));
         fa_copy = (float*) malloc(m * n * sizeof(float));
         fu = (float*) malloc(m * n * sizeof(float));
-        fv = (float*) malloc(m * n * sizeof(float));
+        fv = (float*) malloc(n * n * sizeof(float));
         fs = (float*) malloc(n * sizeof(float));
 
         finit_rand_matr(fa, m, n);
         fcopy_matr(fa_copy, fa, m, n);
         finit_ident_matr(fu, m, n);
-        finit_ident_matr(fv, m, n);
+        finit_ident_matr(fv, n, n);
     }
 
     if(data_type == 'd') 
@@ -83,12 +83,12 @@ int main(int argc, char* argv[])
         da = (double*) malloc(m * n * sizeof(double));
         da_copy = (double*) malloc(m * n * sizeof(double));
         du = (double*) malloc(m * n * sizeof(double));
-        dv = (double*) malloc(m * n * sizeof(double));
+        dv = (double*) malloc(n * n * sizeof(double));
         ds = (double*) malloc(n * sizeof(double));
         dinit_rand_matr(da, m, n);
         dcopy_matr(da_copy, da, m, n);
         dinit_ident_matr(du, m, n);
-        dinit_ident_matr(dv, m, n);
+        dinit_ident_matr(dv, n, n);
     }
 
     if ((strlen(vect_type) == 0))
@@ -110,12 +110,14 @@ int main(int argc, char* argv[])
 
             printf("\ngesvj\t%c\t%f\t%s", data_type, (t2 - t1), "no_vectorized");
             printf("\n");
-            dprint_matr(ds, n, 1);
+            //dprint_matr(ds, n, 1);
+            dprint_matr(da_copy, m, n);
+
 
             //gesvj MKL
             dcopy_matr(da_copy, da, m, n);
             dinit_ident_matr(du, m, n);
-            dinit_ident_matr(dv, m, n);
+            dinit_ident_matr(dv, n, n);
 
             char joba = 'G';
             char jobu = 'U';
@@ -135,7 +137,9 @@ int main(int argc, char* argv[])
 
             printf("\ngesvj\t%c\t%f\t%s", data_type, (t2 - t1), "MKL");
             printf("\n");
-            dprint_matr(ds, n, 1);
+            //dprint_matr(ds, n, 1);
+            //stores U in V!!!
+            dprint_matr(dv, n, n);
             free(dwork);
         }
     }
@@ -347,7 +351,7 @@ void dgesvj_nb(double* amatr, double* umatr, double* vmatr, double* svect, int m
     //double *acopy_matr = (double*) malloc(m * n * sizeof(double));
     double *gramm_matr = (double*) malloc(m * n * sizeof(double));
 
-    cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, m, n, n, 1.0, amatr, m, amatr, n, 0.0, gramm_matr, n);
+    //cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, m, n, n, 1.0, amatr, m, amatr, n, 0.0, gramm_matr, n);
     dfrobenius(amatr, m, n, &norm, &off_norm);
     //while (sqrt(off_norm) > tol * sqrt(norm))
     //while (sqrt(off_norm) > tol)
@@ -356,68 +360,80 @@ void dgesvj_nb(double* amatr, double* umatr, double* vmatr, double* svect, int m
         converged = 1;
         //B^T * B
         //cblas_dcopy(m * n, amatr, 1, acopy_matr, 1);
-        cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, m, n, n, 1.0, amatr, m, amatr, n, 0.0, gramm_matr, n);
-        for (int i = 0; i < (n - 1); i++) 
+        //is this correct operation for m > n?
+        //cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, m, n, n, 1.0, amatr, m, amatr, n, 0.0, gramm_matr, n);
+
+        //n or m?
+        for (int i = 0; i < (n - 1); i++)
         {
-            for (int j = (i + 1); j < n; j++) 
+            for (int j = (i + 1); j < n; j++)
             {
                 bii = 0.0; bij = 0.0; bjj = 0.0;
-                bii = gramm_matr[n * i + i];
-                bij = gramm_matr[n * j + i];
-                ////bji = gramm_matr[n * i + j];
-                bjj = gramm_matr[n * j + j];
-                /*for (int k = 0; k < m; k++)
+
+                //n or m? 
+                //!upper triangle elements
+                //bii = gramm_matr[n * i + i];
+                //bij = gramm_matr[n * i + j];
+                ////bji = gramm_matr[n * j + i];
+                //bjj = gramm_matr[n * j + j];
+
+                //Gramm matrix computation - multiply of columns?
+                for (int k = 0; k < m; k++)
                 {
                     bii += amatr[n * k + i] * amatr[n * k + i];
+                    //is this correct operation?
                     bij += amatr[n * k + i] * amatr[n * k + j];
                     bjj += amatr[n * k + j] * amatr[n * k + j];
-                }*/
-
-                if (abs(bij) < tol)
-                    continue;
-
-                converged = 0;
-
-                if (bij != 0.0)
-                {
-                    tau = (bjj - bii) / (2.0 * bij);
-                    double sign = tau > 0.0 ? 1.0 : -1.0;
-                    t = sign / (abs(tau) + sqrt(1.0 + (tau * tau)));
-                    //if(tau >= 0)
-                    //    t = 1.0 / (tau + sqrt(1.0 + (tau * tau)));
-                    //else 
-                    //    t = -1.0 / (-tau + sqrt(1.0 + (tau * tau)));
-
-                    c = 1.0 / sqrt(1.0 + (t * t));
-                    s = t * c;
-                }
-                else
-                {
-                    c = 1.0;
-                    s = 0.0;
                 }
 
-                for (int k = 0; k < m; k++) 
+                if (abs(bij) >= (tol * sqrt(bii * bjj)))
                 {
-                    double b_ki = amatr[n * k + i];
-                    double b_kj = amatr[n * k + j];
+                    converged = 0;
 
-                    double left = (c * b_ki) - (s * b_kj);
-                    double right = (s * b_ki) + (c * b_kj);
+                    //if (bij != 0.0)
+                    //{
+                        tau = (bjj - bii) / (2.0 * bij);
+                        double sign = tau > 0.0 ? 1.0 : -1.0;
+                        t = sign / (abs(tau) + sqrt(1.0 + (tau * tau)));
+                        //if(tau >= 0)
+                        //    t = 1.0 / (tau + sqrt(1.0 + (tau * tau)));
+                        //else 
+                        //    t = -1.0 / (-tau + sqrt(1.0 + (tau * tau)));
 
-                    amatr[n * k + i] = left;
-                    amatr[n * k + j] = right;
-                }
-                for (int k = 0; k < n; k++) 
-                {
-                    double v_ki = vmatr[n * k + i];
-                    double v_kj = vmatr[n * k + j];
+                        c = 1.0 / sqrt(1.0 + (t * t));
+                        s = t * c;
+                    //}
+                    /*else
+                    {
+                        c = 1.0;
+                        s = 0.0;
+                    }*/
 
-                    double left = (c * v_ki) - (s * v_kj);
-                    double right = (s * v_ki) + (c * v_kj);
+                    // n or m? of columns m +
+                    for (int k = 0; k < m; k++)
+                    {
+                        double b_ki = amatr[n * k + i];
+                        double b_kj = amatr[n * k + j];
 
-                    vmatr[n * k + i] = left;
-                    vmatr[n * k + j] = right;
+                        double left = (c * b_ki) - (s * b_kj);
+                        double right = (s * b_ki) + (c * b_kj);
+
+                        amatr[n * k + i] = left;
+                        amatr[n * k + j] = right;
+                    }
+
+                    //n or m? V is n x n +
+                    for (int k = 0; k < n; k++)
+                    {
+                        double v_ki = vmatr[n * k + i];
+                        double v_kj = vmatr[n * k + j];
+
+                        double left = (c * v_ki) - (s * v_kj);
+                        double right = (s * v_ki) + (c * v_kj);
+
+                        vmatr[n * k + i] = left;
+                        vmatr[n * k + j] = right;
+                    }
                 }
             }
         }
@@ -429,22 +445,23 @@ void dgesvj_nb(double* amatr, double* umatr, double* vmatr, double* svect, int m
         //    return;
         //}
         //else
-            iter++;
-    } while (iter < 100);
-    //while (!converged);
+        iter++;
+        //converges criteria?
+        //} while (iter < 100);
+    } while (!converged);
 
+    //n or m?
     for (int i = 0; i < n; i++) 
     {
         double sigma = 0.0;
+
+        // ||Ai||2 +
         for (int k = 0; k < m; k++) 
         {
             sigma += amatr[n * k + i] * amatr[n * k + i];
         }
         sigma = sqrt(sigma);
 
-        //if (i < n_singular_vals) {
-        //    s[i] = sigma;
-        //}
         svect[i] = sigma;
 
         //U - zeroes-like ?
@@ -455,5 +472,5 @@ void dgesvj_nb(double* amatr, double* umatr, double* vmatr, double* svect, int m
     }
     printf("\nEND");
     dsort_vals(amatr, vmatr, svect, m, n);
-    //free(gramm_matr);
+    free(gramm_matr);
 }
