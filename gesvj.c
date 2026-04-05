@@ -337,13 +337,14 @@ void dprint_matr(double* amatr, int m, int n)
     {
         for (int j = 0; j < n; j++)
         {
-            printf("%.1f\t", amatr[(i * n) + j]);
+            //printf("%.1f\t", amatr[(i * n) + j]);
+            printf("%f\t", amatr[(i * n) + j]);
         }
         printf("\n");
     }
 }
 
-//testing...
+//done
 void dgesvj_nb(double* amatr, double* umatr, double* vmatr, double* svect, int m, int n)
 {
     int iter = 0;
@@ -362,7 +363,7 @@ void dgesvj_nb(double* amatr, double* umatr, double* vmatr, double* svect, int m
     double c = 0.0;
     double s = 0.0;
     //double *acopy_matr = (double*) malloc(m * n * sizeof(double));
-    double *gramm_matr = (double*) malloc(m * n * sizeof(double));
+    //double *gramm_matr = (double*) malloc(m * n * sizeof(double));
 
     //cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, m, n, n, 1.0, amatr, m, amatr, n, 0.0, gramm_matr, n);
     //dfrobenius(amatr, m, n, &norm, &off_norm);
@@ -485,7 +486,7 @@ void dgesvj_nb(double* amatr, double* umatr, double* vmatr, double* svect, int m
     }
     //printf("\nEND");
     dsort_vals(amatr, vmatr, svect, m, n);
-    free(gramm_matr);
+    //free(gramm_matr);
 }
 
 void dgesvj_b(double* amatr, double* umatr, double* vmatr, double* svect, int m, int n)
@@ -504,11 +505,15 @@ void dgesvj_b(double* amatr, double* umatr, double* vmatr, double* svect, int m,
 
     double* al_matr = (double*)malloc(m * k * sizeof(double));
     double* ar_matr = (double*)malloc(m * k * sizeof(double));
+    double* alr_matr = (double*)malloc(m * 2 * k * sizeof(double));
 
     double* tmp_matr = (double*)malloc(k * k * sizeof(double));
 
     double* gramm_matr = (double*)malloc(k * k * 4 * sizeof(double)); // G = (G_ll G_lr G^T_lr G_rr)
     //double* gramm_matr = (double*)malloc(m * k * 4 * sizeof(double)); //temporary size for test
+    double* ulocal_matr = (double*)malloc(k * k * 4 * sizeof(double));
+    double* vlocal_matr = (double*)malloc(k * k * 4 * sizeof(double));
+    double* dslocal = (double*)malloc(2*k * sizeof(double));
 
     cblas_dcopy(m * n, amatr, 1, acopy_matr, 1);
 
@@ -565,13 +570,44 @@ void dgesvj_b(double* amatr, double* umatr, double* vmatr, double* svect, int m,
         {
             cblas_dcopy(k, &tmp_matr[k * i], 1, &gramm_matr[((2 * k) * (k + i)) + k], 1);
         }
+
+        dfrobenius(gramm_matr, 2*k, 2*k, &norm, &off_norm);
+        if (sqrt(off_norm) >= tol)
+        {
+            //diagonalization of G
+            dgesvj_nb(gramm_matr, ulocal_matr, vlocal_matr, dslocal, 2*k, 2*k);
+            
+            
+            //update of block columns
+            for (int i = 0; i < m; i++)
+            {
+                cblas_dcopy(k, &al_matr[k * i], 1, &alr_matr[2 * k * i], 1);
+                cblas_dcopy(k, &ar_matr[k * i], 1, &alr_matr[(2 * k * i) + k], 1);
+            }
+            //dprint_matr(alr_matr, m, 2 * k);
+            //printf("\n");
+            //dprint_matr(gramm_matr, 2 * k, 2 * k);
+
+            //update of block columns
+            //(A_l, A_r) = (A_l, A_r) * X
+            cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, m, 2 * k, 2 * k, 1.0, alr_matr, 2 * k, gramm_matr, 2 * k, 0.0,
+                alr_matr, 2 * k);
+
+            //printf("\n");
+            //dprint_matr(alr_matr, m, 2 * k);
+        }
+
+
+
         //dprint_matr(al_matr, m, k);
         //printf("\n");
+        //dprint_matr(ar_matr, m, k);
+        //printf("\n");
+        //dprint_matr(alr_matr, m, 2 * k);
         //dprint_matr(tmp_matr, k, k);
         //dprint_matr(acopy_matr, m, n);
         //printf("\n");
         //dprint_matr(gramm_matr, 2 * k, 2 * k);
-        //dprint_matr(al_matr, m, k);
         //printf("\n");
         //dprint_matr(ar_matr, m, k);
         
