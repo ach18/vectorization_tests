@@ -337,7 +337,7 @@ void dprint_matr(double* amatr, int m, int n)
     {
         for (int j = 0; j < n; j++)
         {
-            printf("%f\t", amatr[(i * n) + j]);
+            printf("%.1f\t", amatr[(i * n) + j]);
         }
         printf("\n");
     }
@@ -505,8 +505,10 @@ void dgesvj_b(double* amatr, double* umatr, double* vmatr, double* svect, int m,
     double* al_matr = (double*)malloc(m * k * sizeof(double));
     double* ar_matr = (double*)malloc(m * k * sizeof(double));
 
-    //double* gramm_matr = (double*)malloc(m * m * 4 * sizeof(double)); // G = (G_ll G_lr G^T_lr G_rr)
-    double* gramm_matr = (double*)malloc(m * k * 4 * sizeof(double)); //temporary size for test
+    double* tmp_matr = (double*)malloc(k * k * sizeof(double));
+
+    double* gramm_matr = (double*)malloc(k * k * 4 * sizeof(double)); // G = (G_ll G_lr G^T_lr G_rr)
+    //double* gramm_matr = (double*)malloc(m * k * 4 * sizeof(double)); //temporary size for test
 
     cblas_dcopy(m * n, amatr, 1, acopy_matr, 1);
 
@@ -514,23 +516,62 @@ void dgesvj_b(double* amatr, double* umatr, double* vmatr, double* svect, int m,
     //while (sqrt(off_norm) > tol * sqrt(norm))
     //while (sqrt(off_norm) >= tol)
     //{
+        //copy to A_l
         for (int i = 0; i < m; i++)
         {
             cblas_dcopy(k, &acopy_matr[n * i], 1, &al_matr[k * i], 1);
         }
+        //copy to A_r
         for (int i = 0; i < m; i++)
         {
             cblas_dcopy(k, &acopy_matr[(n * i) + (n-k)], 1, &ar_matr[k * i], 1);
         }
 
-        for (int i = 0; i < m; i++)
+        //A^T_l * A_l
+        cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, k, k, m, 1.0, al_matr, k, al_matr, k, 0.0, tmp_matr, k);
+        //copy (A^T_l * A_l) to G_ll
+        for (int i = 0; i < k; i++)
         {
-            cblas_dcopy(k, &al_matr[k * i], 1, &gramm_matr[2 * k * i], 1);
+            cblas_dcopy(k, &tmp_matr[k * i], 1, &gramm_matr[2 * k * i], 1);
         }
-        dprint_matr(gramm_matr, 2 * m, 2 * k);
+        //printf("\n");
+        //dprint_matr(tmp_matr, k, k);
+
+        //A^T_l * A_r
+        cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, k, k, m, 1.0, al_matr, k, ar_matr, k, 0.0, tmp_matr, k);
+        //copy (A^T_l * A_r) to G_lr
+        for (int i = 0; i < k; i++)
+        {
+            cblas_dcopy(k, &tmp_matr[k * i], 1, &gramm_matr[(2 * k * i) + ((2 * k) - k)], 1);
+        }
+        //printf("\n");
+        //dprint_matr(tmp_matr, k, k);
+
+
+        //A^T_r * A_l
+        cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, k, k, m, 1.0, ar_matr, k, al_matr, k, 0.0, tmp_matr, k);
+        //copy (A^T_r * A_l) to G^T_lr
+        for (int i = 0; i < k; i++)
+        {
+            cblas_dcopy(k, &tmp_matr[k * i], 1, &gramm_matr[(2 * k) * (k + i)], 1);
+        }
+        //printf("\n");
+        //dprint_matr(tmp_matr, k, k);
+
+        //A^T_r * A_r
+        cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, k, k, m, 1.0, ar_matr, k, ar_matr, k, 0.0, tmp_matr, k);
+        //copy (A^T_r * A_r) to G_rr
+        for (int i = 0; i < k; i++)
+        {
+            cblas_dcopy(k, &tmp_matr[k * i], 1, &gramm_matr[((2 * k) * (k + i)) + k], 1);
+        }
+        //dprint_matr(al_matr, m, k);
+        //printf("\n");
+        //dprint_matr(tmp_matr, k, k);
         //dprint_matr(acopy_matr, m, n);
-        printf("\n");
-        dprint_matr(al_matr, m, k);
+        //printf("\n");
+        //dprint_matr(gramm_matr, 2 * k, 2 * k);
+        //dprint_matr(al_matr, m, k);
         //printf("\n");
         //dprint_matr(ar_matr, m, k);
         
